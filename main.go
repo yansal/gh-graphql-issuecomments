@@ -2,13 +2,15 @@ package main
 
 import (
 	"bytes"
-	"context"
 	_ "embed"
+	"fmt"
 	"html/template"
 	"io"
 	"log"
 	"net/http"
+	"net/http/httputil"
 	"os"
+	"time"
 
 	"github.com/henvic/httpretty"
 	"github.com/shurcooL/githubv4"
@@ -39,23 +41,19 @@ func main1() error {
 }
 
 func newserver() (*server, error) {
-	ctx := context.Background()
-	src := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: os.Getenv("GITHUB_TOKEN")})
-	httpclient := oauth2.NewClient(ctx, src)
-
 	t, err := template.New("name").Parse(templatestr)
 	if err != nil {
 		return nil, err
 	}
 
 	return &server{
-		client:   githubv4.NewClient(httpclient),
+		src:      oauth2.StaticTokenSource(&oauth2.Token{AccessToken: os.Getenv("GITHUB_TOKEN")}),
 		template: t,
 	}, nil
 }
 
 type server struct {
-	client   *githubv4.Client
+	src      oauth2.TokenSource
 	template *template.Template
 }
 
@@ -83,18 +81,88 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if query := r.URL.Query(); query.Has("login") {
+		h := w.Header()
+		h.Set("content-type", "text/html; charset=utf-8")
+
 		ctx := r.Context()
-		if err := s.client.Query(ctx, &q, map[string]interface{}{
+		httpclient := oauth2.NewClient(ctx, s.src)
+		httpclient.Transport = newwrappedroundtripper(httpclient.Transport, w)
+		client := githubv4.NewClient(httpclient)
+
+		if err := client.Query(ctx, &q, map[string]interface{}{
 			"login": githubv4.String(query.Get("login")),
 		}); err != nil {
+			// TODO: check if status has already been written
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		fmt.Fprint(w, `<script>while (document.body.firstChild) {document.body.removeChild(document.body.firstChild)}</script>`)
 	}
 
 	if err := s.template.Execute(b, q); err != nil {
+		// TODO: check if status has already been written
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	io.Copy(w, b)
+}
+
+func newwrappedroundtripper(rt http.RoundTripper, w http.ResponseWriter) http.RoundTripper {
+	done := make(chan struct{})
+	return &wrappedroundtripper{
+		before: func(req *http.Request) {
+			body := true
+			dump, err := httputil.DumpRequestOut(req, body)
+			if err != nil {
+				return
+			}
+			fmt.Fprintf(w, "<pre>%s</pre>", dump)
+			flusher := w.(http.Flusher)
+			flusher.Flush()
+			go func() {
+				ticker := time.NewTicker(100 * time.Millisecond)
+				defer ticker.Stop()
+				for range ticker.C {
+					select {
+					case <-done:
+						return
+					default:
+						fmt.Fprintf(w, "💩")
+						flusher.Flush()
+					}
+				}
+			}()
+		},
+		after: func(resp *http.Response, err error) {
+			close(done)
+			if err != nil {
+				return
+			}
+			body := true
+			dump, err := httputil.DumpResponse(resp, body)
+			if err != nil {
+				return
+			}
+			fmt.Fprintf(w, "<pre>%s</pre>", dump)
+			w.(http.Flusher).Flush()
+		},
+		wrapped: rt,
+	}
+}
+
+type wrappedroundtripper struct {
+	before  func(*http.Request)
+	after   func(*http.Response, error)
+	wrapped http.RoundTripper
+}
+
+func (rt *wrappedroundtripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	if rt.before != nil {
+		rt.before(req)
+	}
+	resp, err := rt.wrapped.RoundTrip(req)
+	if rt.after != nil {
+		rt.after(resp, err)
+	}
+	return resp, err
 }

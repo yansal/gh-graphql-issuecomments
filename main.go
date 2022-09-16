@@ -96,16 +96,14 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err := client.Query(ctx, &q, map[string]interface{}{
 			"login": githubv4.String(query.Get("login")),
 		}); err != nil {
-			// TODO: check if status has already been written
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			log.Print(err)
 			return
 		}
 		fmt.Fprint(w, `<script>document.body.innerHTML="" </script>`)
 	}
 
 	if err := s.template.Execute(b, q); err != nil {
-		// TODO: check if status has already been written
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Print(err)
 		return
 	}
 	io.Copy(w, b)

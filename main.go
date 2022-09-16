@@ -37,7 +37,11 @@ func main1() error {
 	if err != nil {
 		return err
 	}
-	return http.ListenAndServe(":8080", s)
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+	return http.ListenAndServe(":"+port, s)
 }
 
 func newserver() (*server, error) {

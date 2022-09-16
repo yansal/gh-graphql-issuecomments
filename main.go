@@ -103,7 +103,7 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.template.Execute(b, q); err != nil {
-		log.Print(err)
+		fmt.Fprint(w, err)
 		return
 	}
 	io.Copy(w, b)

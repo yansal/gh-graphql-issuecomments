@@ -100,7 +100,7 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		fmt.Fprint(w, `<script>while (document.body.firstChild) {document.body.removeChild(document.body.firstChild)}</script>`)
+		fmt.Fprint(w, `<script>document.body.innerHTML="" </script>`)
 	}
 
 	if err := s.template.Execute(b, q); err != nil {

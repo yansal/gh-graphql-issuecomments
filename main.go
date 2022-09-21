@@ -33,30 +33,34 @@ func main() {
 }
 
 func main1() error {
-	s, err := newserver()
+	h, err := newhandler()
 	if err != nil {
 		return err
 	}
+	mux := http.NewServeMux()
+	mux.Handle("/favicon.ico", http.NotFoundHandler())
+	mux.Handle("/", h)
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
-	return http.ListenAndServe(":"+port, s)
+	return http.ListenAndServe(":"+port, mux)
 }
 
-func newserver() (*server, error) {
+func newhandler() (http.Handler, error) {
 	t, err := template.New("name").Parse(templatestr)
 	if err != nil {
 		return nil, err
 	}
 
-	return &server{
+	return &handler{
 		src:      oauth2.StaticTokenSource(&oauth2.Token{AccessToken: os.Getenv("GITHUB_TOKEN")}),
 		template: t,
 	}, nil
 }
 
-type server struct {
+type handler struct {
 	src      oauth2.TokenSource
 	template *template.Template
 }
@@ -64,7 +68,7 @@ type server struct {
 //go:embed template.html
 var templatestr string
 
-func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	b := new(bytes.Buffer)
 	var q struct {
 		User struct {
@@ -85,11 +89,10 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if query := r.URL.Query(); query.Has("login") {
-		h := w.Header()
-		h.Set("content-type", "text/html; charset=utf-8")
+		w.Header().Set("content-type", "text/html; charset=utf-8")
 
 		ctx := r.Context()
-		httpclient := oauth2.NewClient(ctx, s.src)
+		httpclient := oauth2.NewClient(ctx, h.src)
 		httpclient.Transport = newwrappedroundtripper(httpclient.Transport, w)
 		client := githubv4.NewClient(httpclient)
 
@@ -102,7 +105,7 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, `<script>document.body.innerHTML="" </script>`)
 	}
 
-	if err := s.template.Execute(b, q); err != nil {
+	if err := h.template.Execute(b, q); err != nil {
 		fmt.Fprint(w, err)
 		return
 	}

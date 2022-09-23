@@ -101,7 +101,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			log.Print(err)
 			return
 		}
-		fmt.Fprint(w, `<script>document.body.innerHTML="" </script>`)
+		fmt.Fprint(w, `<script>document.body.innerHTML=""</script>`)
 	}
 
 	if err := h.template.Execute(b, q); err != nil {

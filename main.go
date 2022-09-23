@@ -4,6 +4,7 @@ import (
 	"bytes"
 	_ "embed"
 	"fmt"
+	"html"
 	"html/template"
 	"io"
 	"log"
@@ -73,6 +74,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	b := new(bytes.Buffer)
 	var q struct {
 		User struct {
+			Login         githubv4.String
 			IssueComments struct {
 				Nodes []struct {
 					CreatedAt githubv4.String
@@ -85,7 +87,11 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					}
 					URL githubv4.String
 				}
-			} `graphql:"issueComments(first:100, orderBy:{direction:DESC, field:UPDATED_AT})"`
+				PageInfo struct {
+					EndCursor   githubv4.String
+					HasNextPage bool
+				}
+			} `graphql:"issueComments(first: 100, after: $cursor, orderBy:{direction:DESC, field:UPDATED_AT})"`
 		} `graphql:"user(login: $login)"`
 	}
 
@@ -95,9 +101,14 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		httpclient.Transport = newwrappedroundtripper(httpclient.Transport, w)
 		client := githubv4.NewClient(httpclient)
 
-		if err := client.Query(ctx, &q, map[string]interface{}{
-			"login": githubv4.String(query.Get("login")),
-		}); err != nil {
+		variables := map[string]interface{}{
+			"cursor": (*githubv4.String)(nil),
+			"login":  githubv4.String(query.Get("login")),
+		}
+		if query.Has("cursor") {
+			variables["cursor"] = githubv4.String(query.Get("cursor"))
+		}
+		if err := client.Query(ctx, &q, variables); err != nil {
 			log.Print(err)
 			return
 		}
@@ -120,7 +131,7 @@ func newwrappedroundtripper(rt http.RoundTripper, w http.ResponseWriter) http.Ro
 			if err != nil {
 				return
 			}
-			fmt.Fprintf(w, "<pre>%s</pre>", dump)
+			fmt.Fprintf(w, "<pre>%s</pre>", html.EscapeString(string(dump)))
 			flusher := w.(http.Flusher)
 			flusher.Flush()
 			go func() {
@@ -147,7 +158,7 @@ func newwrappedroundtripper(rt http.RoundTripper, w http.ResponseWriter) http.Ro
 			if err != nil {
 				return
 			}
-			fmt.Fprintf(w, "<pre>%s</pre>", dump)
+			fmt.Fprintf(w, "<pre>%s</pre>", html.EscapeString(string(dump)))
 			w.(http.Flusher).Flush()
 		},
 		wrapped: rt,

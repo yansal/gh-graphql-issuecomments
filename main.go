@@ -69,6 +69,7 @@ type handler struct {
 var templatestr string
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprint(w, "<!DOCTYPE html>")
 	b := new(bytes.Buffer)
 	var q struct {
 		User struct {
@@ -89,8 +90,6 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if query := r.URL.Query(); query.Has("login") {
-		w.Header().Set("content-type", "text/html; charset=utf-8")
-
 		ctx := r.Context()
 		httpclient := oauth2.NewClient(ctx, h.src)
 		httpclient.Transport = newwrappedroundtripper(httpclient.Transport, w)

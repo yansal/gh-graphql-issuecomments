@@ -82,6 +82,12 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					Issue     struct {
 						Title githubv4.String
 					}
+					ReactionGroups []struct {
+						Content  githubv4.String
+						Reactors struct {
+							TotalCount githubv4.Int
+						}
+					}
 					Repository struct {
 						NameWithOwner githubv4.String
 					}

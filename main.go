@@ -77,6 +77,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Login         githubv4.String
 			IssueComments struct {
 				Nodes []struct {
+					BodyText  githubv4.String
 					CreatedAt githubv4.String
 					UpdatedAt githubv4.String
 					Issue     struct {

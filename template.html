@@ -5,7 +5,7 @@
 {{end}}
 
 {{define "issuecomments"}}
-    <div>{{.UpdatedAt}}: {{.Repository.NameWithOwner}} <a href="{{.URL}}">{{.Issue.Title}}</a>{{range .ReactionGroups}}{{template "reaction" .}}{{end}}</div>
+    <div>{{.UpdatedAt}}: {{.Repository.NameWithOwner}} <a href="{{.URL}}" title="{{.BodyText}}">{{.Issue.Title}}</a>{{range .ReactionGroups}}{{template "reaction" .}}{{end}}</div>
 {{end}}
 
 <form method="get">

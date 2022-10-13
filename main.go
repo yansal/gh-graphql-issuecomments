@@ -50,7 +50,7 @@ func main1() error {
 }
 
 func newhandler() (http.Handler, error) {
-	t, err := template.New("name").Parse(templatestr)
+	t, err := template.ParseFS(templatefs)
 	if err != nil {
 		return nil, err
 	}
@@ -66,42 +66,10 @@ type handler struct {
 	template *template.Template
 }
 
-//go:embed template.html
-var templatestr string
-
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "<!DOCTYPE html>")
 	b := new(bytes.Buffer)
-	var q struct {
-		User struct {
-			Login         githubv4.String
-			IssueComments struct {
-				Nodes []struct {
-					BodyText  githubv4.String
-					CreatedAt githubv4.String
-					UpdatedAt githubv4.String
-					Issue     struct {
-						Title githubv4.String
-					}
-					ReactionGroups []struct {
-						Content  githubv4.String
-						Reactors struct {
-							TotalCount githubv4.Int
-						}
-					}
-					Repository struct {
-						NameWithOwner githubv4.String
-					}
-					URL githubv4.String
-				}
-				PageInfo struct {
-					EndCursor   githubv4.String
-					HasNextPage bool
-				}
-			} `graphql:"issueComments(first: 100, after: $cursor, orderBy:{direction:DESC, field:UPDATED_AT})"`
-		} `graphql:"user(login: $login)"`
-	}
-
+	var q Q
 	if query := r.URL.Query(); query.Has("login") {
 		ctx := r.Context()
 		httpclient := oauth2.NewClient(ctx, h.src)

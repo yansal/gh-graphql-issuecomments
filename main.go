@@ -50,7 +50,7 @@ func main1() error {
 }
 
 func newhandler() (http.Handler, error) {
-	t, err := template.ParseFS(templatefs)
+	t, err := template.ParseFS(templatefs, "*")
 	if err != nil {
 		return nil, err
 	}
@@ -77,12 +77,17 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		client := githubv4.NewClient(httpclient)
 
 		variables := map[string]interface{}{
-			"cursor": (*githubv4.String)(nil),
-			"login":  githubv4.String(query.Get("login")),
+			"issuescursor":                       (*githubv4.String)(nil),
+			"issuecommentscursor":                (*githubv4.String)(nil),
+			"pullrequestscursor":                 (*githubv4.String)(nil),
+			"repositorydiscussionscursor":        (*githubv4.String)(nil),
+			"repositorydiscussioncommentscursor": (*githubv4.String)(nil),
+			"first":                              githubv4.Int(100),
+			"login":                              githubv4.String(query.Get("login")),
 		}
-		if query.Has("cursor") {
-			variables["cursor"] = githubv4.String(query.Get("cursor"))
-		}
+		// if query.Has("cursor") {
+		// 	variables["cursor"] = githubv4.String(query.Get("cursor"))
+		// }
 		if err := client.Query(ctx, &q, variables); err != nil {
 			log.Print(err)
 			return
@@ -90,7 +95,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, `<script>document.body.innerHTML=""</script>`)
 	}
 
-	if err := h.template.Execute(b, q); err != nil {
+	if err := h.template.Execute(b, q.Items()); err != nil {
 		fmt.Fprint(w, err)
 		return
 	}

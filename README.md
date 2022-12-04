@@ -1,2 +1,2 @@
 # gh-graphql-issuecomments
-https://gh-graphql-issuecomments.herokuapp.com
+https://gh-graphql-issuecomments.fly.dev

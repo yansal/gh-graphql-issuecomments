@@ -1,0 +1,61 @@
+{{ define "reaction" -}}
+{{ if ne .Reactors.TotalCount 0 }}
+{{ if eq .Content "THUMBS_UP" }}
+👍
+{{ else if eq .Content "THUMBS_DOWN" }}
+👎
+{{ else if eq .Content "LAUGH" }}
+😄
+{{ else if
+eq
+.Content "HOORAY" }}
+🎉
+{{ else if eq .Content "CONFUSED" }}
+😕
+{{ else if eq .Content "HEART" }}
+❤️
+{{ else if eq .Content
+"ROCKET" }}
+🚀
+{{ else if eq .Content "EYES" }}
+👀
+{{ end }}
+{{ .Reactors.TotalCount }}
+{{ end }}
+{{- end }}
+
+{{ define "issuecomments" -}}
+<td>{{ .UpdatedAt }}</td>
+<td>{{ .Repository.NameWithOwner }}</td>
+<td><a href="{{ .URL }}" title="{{ .BodyText }}">{{ .Issue.Title }}</a></td>
+<td>{{ range .ReactionGroups }}{{ template "reaction" . }}{{ end }}</td>
+{{- end }}
+
+{{ define "second" -}}
+<main class="container">
+    <form method="get">
+        <div class="grid">
+            <input type="text" name="login" placeholder="github login" required>
+        </div>
+    </form>
+
+    {{ with .User }}
+    <table>
+        <tbody>
+            {{ range .IssueComments.Nodes -}}
+            <tr>
+                {{ template "issuecomments" . }}
+            </tr>
+            {{- end }}
+        </tbody>
+    </table>
+
+    {{ if .IssueComments.PageInfo.HasNextPage -}}
+    <a href="/?login={{ .Login }}&cursor={{ .IssueComments.PageInfo.EndCursor }}">Next</a>
+    {{- end }}
+    {{ end }}
+</main>
+</body>
+
+</html>
+{{- end }}

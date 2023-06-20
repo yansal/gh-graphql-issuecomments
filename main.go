@@ -2,7 +2,7 @@ package main
 
 import (
 	"bytes"
-	_ "embed"
+	"embed"
 	"fmt"
 	"html"
 	"html/template"
@@ -33,12 +33,20 @@ func main() {
 	}
 }
 
+var (
+	//go:embed static
+	staticfs embed.FS
+	//go:embed templates
+	tmplfs embed.FS
+)
+
 func main1() error {
 	h, err := newhandler()
 	if err != nil {
 		return err
 	}
 	mux := http.NewServeMux()
+	mux.Handle("/static/", http.FileServer(http.FS(staticfs)))
 	mux.Handle("/favicon.ico", http.NotFoundHandler())
 	mux.Handle("/", h)
 
@@ -50,30 +58,33 @@ func main1() error {
 }
 
 func newhandler() (http.Handler, error) {
-	t, err := template.New("name").Parse(templatestr)
+	tmpl, err := template.ParseFS(tmplfs, "templates/*")
 	if err != nil {
 		return nil, err
 	}
-
 	return &handler{
-		src:      oauth2.StaticTokenSource(&oauth2.Token{AccessToken: os.Getenv("GITHUB_TOKEN")}),
-		template: t,
+		src:  oauth2.StaticTokenSource(&oauth2.Token{AccessToken: os.Getenv("GITHUB_TOKEN")}),
+		tmpl: tmpl,
 	}, nil
 }
 
 type handler struct {
-	src      oauth2.TokenSource
-	template *template.Template
+	src  oauth2.TokenSource
+	tmpl *template.Template
 }
 
-//go:embed template.html
-var templatestr string
-
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprint(w, "<!DOCTYPE html>")
 	b := new(bytes.Buffer)
+	if err := h.tmpl.ExecuteTemplate(b, "first", nil); err != nil {
+		fmt.Fprint(w, err)
+		return
+	}
+	if _, err := io.Copy(w, b); err != nil {
+		return
+	}
+
 	var q struct {
-		User struct {
+		User *struct {
 			Login         githubv4.String
 			IssueComments struct {
 				Nodes []struct {
@@ -122,11 +133,14 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, `<script>document.body.innerHTML=""</script>`)
 	}
 
-	if err := h.template.Execute(b, q); err != nil {
+	b.Reset()
+	if err := h.tmpl.ExecuteTemplate(b, "second", q); err != nil {
 		fmt.Fprint(w, err)
 		return
 	}
-	io.Copy(w, b)
+	if _, err := io.Copy(w, b); err != nil {
+		return
+	}
 }
 
 func newwrappedroundtripper(rt http.RoundTripper, w http.ResponseWriter) http.RoundTripper {

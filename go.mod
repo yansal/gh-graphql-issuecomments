@@ -1,4 +1,4 @@
-module gh-graphql-issuecomments
+module github.com/yansal/gh-graphql-issuecomments
 
 go 1.19
 

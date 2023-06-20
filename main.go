@@ -15,6 +15,7 @@ import (
 
 	"github.com/henvic/httpretty"
 	"github.com/shurcooL/githubv4"
+	"github.com/xeonx/timeago"
 	"golang.org/x/oauth2"
 )
 
@@ -58,7 +59,18 @@ func main1() error {
 }
 
 func newhandler() (http.Handler, error) {
-	tmpl, err := template.ParseFS(tmplfs, "templates/*")
+	tmpl, err := template.
+		New("name").
+		Funcs(template.FuncMap{
+			"ago": func(value githubv4.String) (string, error) {
+				t, err := time.Parse(time.RFC3339, string(value))
+				if err != nil {
+					return "", err
+				}
+				return timeago.English.Format(t), nil
+			},
+		}).
+		ParseFS(tmplfs, "templates/*")
 	if err != nil {
 		return nil, err
 	}

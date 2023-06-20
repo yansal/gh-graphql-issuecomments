@@ -25,7 +25,7 @@ eq
 {{- end }}
 
 {{ define "issuecomments" -}}
-<td>{{ .UpdatedAt }}</td>
+<td title="{{ .UpdatedAt }}">{{ .UpdatedAt | ago }}</td>
 <td>{{ .Repository.NameWithOwner }}</td>
 <td><a href="{{ .URL }}" title="{{ .BodyText }}">{{ .Issue.Title }}</a></td>
 <td>{{ range .ReactionGroups }}{{ template "reaction" . }}{{ end }}</td>

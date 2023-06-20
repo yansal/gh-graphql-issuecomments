@@ -5,6 +5,7 @@ go 1.19
 require (
 	github.com/henvic/httpretty v0.1.0
 	github.com/shurcooL/githubv4 v0.0.0-20220520033151-0b4e3294ff00
+	github.com/xeonx/timeago v1.0.0-rc5
 	golang.org/x/oauth2 v0.0.0-20220822191816-0ebed06d0094
 )
 

@@ -33,16 +33,24 @@ eq
 
 {{ define "second" -}}
 <main class="container">
+    {{ if not .Token }}
+    <form action="/oauth2_login" method="get">
+        <div class="grid">
+            <button>Login with Github</button>
+        </div>
+    </form>
+    {{ else }}
     <form method="get">
         <div class="grid">
             <input type="text" name="login" placeholder="github login" required>
         </div>
     </form>
+    {{ end }}
 
-    {{ with .User }}
+    {{ with .Query }}
     <table>
         <tbody>
-            {{ range .IssueComments.Nodes -}}
+            {{ range .User.IssueComments.Nodes -}}
             <tr>
                 {{ template "issuecomments" . }}
             </tr>
@@ -50,8 +58,8 @@ eq
         </tbody>
     </table>
 
-    {{ if .IssueComments.PageInfo.HasNextPage -}}
-    <a href="/?login={{ .Login }}&cursor={{ .IssueComments.PageInfo.EndCursor }}">Next</a>
+    {{ if .User.IssueComments.PageInfo.HasNextPage -}}
+    <a href="/?login={{ .User.Login }}&cursor={{ .User.IssueComments.PageInfo.EndCursor }}">Next</a>
     {{- end }}
     {{ end }}
 </main>

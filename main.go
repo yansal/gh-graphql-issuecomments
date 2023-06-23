@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"embed"
+	"errors"
 	"fmt"
 	"html"
 	"html/template"
@@ -10,10 +11,9 @@ import (
 	"log"
 	"net/http"
 	"net/http/httputil"
-	"os"
 	"time"
 
-	"github.com/henvic/httpretty"
+	"github.com/ardanlabs/conf/v3"
 	"github.com/shurcooL/githubv4"
 	"github.com/xeonx/timeago"
 	"golang.org/x/oauth2"
@@ -21,14 +21,6 @@ import (
 
 func main() {
 	log.SetFlags(0)
-
-	http.DefaultTransport = (&httpretty.Logger{
-		RequestHeader:  true,
-		RequestBody:    true,
-		ResponseHeader: true,
-		ResponseBody:   true,
-	}).RoundTripper(http.DefaultTransport)
-
 	if err := main1(); err != nil {
 		log.Fatal(err)
 	}
@@ -41,26 +33,84 @@ var (
 	tmplfs embed.FS
 )
 
+const cookiename = `github_access_token`
+
+type config struct {
+	GithubClientID     string `conf:"required"`
+	GithubClientSecret string `conf:"required"`
+	GithubRedirectURL  string `conf:"required"`
+	GithubState        string `conf:"required"`
+	Port               string `conf:"default:8080"`
+}
+
 func main1() error {
+	var cfg config
+	if help, err := conf.Parse("", &cfg); errors.Is(err, conf.ErrHelpWanted) {
+		fmt.Println(help)
+		return nil
+	} else if err != nil {
+		return err
+	}
+
+	mux := http.NewServeMux()
+	mux.Handle("/static/", http.FileServer(http.FS(staticfs)))
+	mux.HandleFunc("/favicon.ico", http.NotFound)
+
+	o := &oauth2handler{
+		cfg: &oauth2.Config{
+			ClientID:     cfg.GithubClientID,
+			ClientSecret: cfg.GithubClientSecret,
+			RedirectURL:  cfg.GithubRedirectURL,
+			Endpoint: oauth2.Endpoint{
+				AuthURL:  "https://github.com/login/oauth/authorize",
+				TokenURL: "https://github.com/login/oauth/access_token",
+			},
+		},
+		state: cfg.GithubState,
+	}
+	mux.HandleFunc("/oauth2_login", o.login)
+	mux.HandleFunc("/oauth2_callback", o.callback)
+
 	h, err := newhandler()
 	if err != nil {
 		return err
 	}
-	mux := http.NewServeMux()
-	mux.Handle("/static/", http.FileServer(http.FS(staticfs)))
-	mux.Handle("/favicon.ico", http.NotFoundHandler())
 	mux.Handle("/", h)
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
+	return http.ListenAndServe(":"+cfg.Port, mux)
+}
+
+type oauth2handler struct {
+	cfg   *oauth2.Config
+	state string
+}
+
+func (o *oauth2handler) callback(w http.ResponseWriter, r *http.Request) {
+	if r.FormValue("state") != o.state {
+		http.Error(w, "invalid state", http.StatusBadRequest)
+		return
 	}
-	return http.ListenAndServe(":"+port, mux)
+	token, err := o.cfg.Exchange(r.Context(), r.FormValue("code"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:  cookiename,
+		Value: token.AccessToken,
+	})
+	http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+}
+
+func (o *oauth2handler) login(w http.ResponseWriter, r *http.Request) {
+	authURL := o.cfg.AuthCodeURL(o.state)
+	http.Redirect(w, r, authURL, http.StatusTemporaryRedirect)
 }
 
 func newhandler() (http.Handler, error) {
 	tmpl, err := template.
-		New("name").
+		New("template_name").
 		Funcs(template.FuncMap{
 			"ago": func(value githubv4.String) (string, error) {
 				t, err := time.Parse(time.RFC3339, string(value))
@@ -75,59 +125,35 @@ func newhandler() (http.Handler, error) {
 		return nil, err
 	}
 	return &handler{
-		src:  oauth2.StaticTokenSource(&oauth2.Token{AccessToken: os.Getenv("GITHUB_TOKEN")}),
 		tmpl: tmpl,
 	}, nil
 }
 
 type handler struct {
-	src  oauth2.TokenSource
 	tmpl *template.Template
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	var data tmpldata
+	if cookie, err := r.Cookie(cookiename); err == nil {
+		data.Token = cookie.Value
+	}
+
+	// TODO: check if token is valid
+
 	b := new(bytes.Buffer)
 	if err := h.tmpl.ExecuteTemplate(b, "first", nil); err != nil {
-		fmt.Fprint(w, err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	if _, err := io.Copy(w, b); err != nil {
 		return
 	}
 
-	var q struct {
-		User *struct {
-			Login         githubv4.String
-			IssueComments struct {
-				Nodes []struct {
-					BodyText  githubv4.String
-					CreatedAt githubv4.String
-					UpdatedAt githubv4.String
-					Issue     struct {
-						Title githubv4.String
-					}
-					ReactionGroups []struct {
-						Content  githubv4.String
-						Reactors struct {
-							TotalCount githubv4.Int
-						}
-					}
-					Repository struct {
-						NameWithOwner githubv4.String
-					}
-					URL githubv4.String
-				}
-				PageInfo struct {
-					EndCursor   githubv4.String
-					HasNextPage bool
-				}
-			} `graphql:"issueComments(first: 100, after: $cursor, orderBy:{direction:DESC, field:UPDATED_AT})"`
-		} `graphql:"user(login: $login)"`
-	}
-
 	if query := r.URL.Query(); query.Has("login") {
 		ctx := r.Context()
-		httpclient := oauth2.NewClient(ctx, h.src)
+		src := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: data.Token})
+		httpclient := oauth2.NewClient(ctx, src)
 		httpclient.Transport = newwrappedroundtripper(httpclient.Transport, w)
 		client := githubv4.NewClient(httpclient)
 
@@ -138,15 +164,16 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if query.Has("cursor") {
 			variables["cursor"] = githubv4.String(query.Get("cursor"))
 		}
-		if err := client.Query(ctx, &q, variables); err != nil {
-			log.Print(err)
+		data.Query = new(githubquery)
+		if err := client.Query(ctx, data.Query, variables); err != nil {
+			fmt.Fprint(w, err)
 			return
 		}
 		fmt.Fprint(w, `<script>document.body.innerHTML=""</script>`)
 	}
 
 	b.Reset()
-	if err := h.tmpl.ExecuteTemplate(b, "second", q); err != nil {
+	if err := h.tmpl.ExecuteTemplate(b, "second", data); err != nil {
 		fmt.Fprint(w, err)
 		return
 	}
@@ -155,7 +182,43 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+type tmpldata struct {
+	Query *githubquery
+	Token string
+}
+
+type githubquery struct {
+	User *struct {
+		Login         githubv4.String
+		IssueComments struct {
+			Nodes []struct {
+				BodyText  githubv4.String
+				CreatedAt githubv4.String
+				UpdatedAt githubv4.String
+				Issue     struct {
+					Title githubv4.String
+				}
+				ReactionGroups []struct {
+					Content  githubv4.String
+					Reactors struct {
+						TotalCount githubv4.Int
+					}
+				}
+				Repository struct {
+					NameWithOwner githubv4.String
+				}
+				URL githubv4.String
+			}
+			PageInfo struct {
+				EndCursor   githubv4.String
+				HasNextPage bool
+			}
+		} `graphql:"issueComments(first: 100, after: $cursor, orderBy:{direction:DESC, field:UPDATED_AT})"`
+	} `graphql:"user(login: $login)"`
+}
+
 func newwrappedroundtripper(rt http.RoundTripper, w http.ResponseWriter) http.RoundTripper {
+	flusher := w.(http.Flusher)
 	done := make(chan struct{})
 	return &wrappedroundtripper{
 		before: func(req *http.Request) {
@@ -165,7 +228,6 @@ func newwrappedroundtripper(rt http.RoundTripper, w http.ResponseWriter) http.Ro
 				return
 			}
 			fmt.Fprintf(w, "<pre>%s</pre>", html.EscapeString(string(dump)))
-			flusher := w.(http.Flusher)
 			flusher.Flush()
 			go func() {
 				ticker := time.NewTicker(100 * time.Millisecond)
@@ -192,7 +254,7 @@ func newwrappedroundtripper(rt http.RoundTripper, w http.ResponseWriter) http.Ro
 				return
 			}
 			fmt.Fprintf(w, "<pre>%s</pre>", html.EscapeString(string(dump)))
-			w.(http.Flusher).Flush()
+			flusher.Flush()
 		},
 		wrapped: rt,
 	}

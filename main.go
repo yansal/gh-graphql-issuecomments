@@ -134,12 +134,23 @@ type handler struct {
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	var data tmpldata
+	var (
+		data       tmpldata
+		ctx        = r.Context()
+		httpclient *http.Client
+	)
 	if cookie, err := r.Cookie(cookiename); err == nil {
-		data.Token = cookie.Value
+		// check if cookie is valid
+		src := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: cookie.Value})
+		httpclient = oauth2.NewClient(ctx, src)
+		client := githubv4.NewClient(httpclient)
+		var q struct {
+			Viewer struct{ Login githubv4.String }
+		}
+		if err := client.Query(ctx, &q, nil); err == nil {
+			data.Authenticated = true
+		}
 	}
-
-	// TODO: check if token is valid
 
 	b := new(bytes.Buffer)
 	if err := h.tmpl.ExecuteTemplate(b, "first", nil); err != nil {
@@ -150,10 +161,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if query := r.URL.Query(); query.Has("login") {
-		ctx := r.Context()
-		src := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: data.Token})
-		httpclient := oauth2.NewClient(ctx, src)
+	if query := r.URL.Query(); data.Authenticated && query.Has("login") {
 		httpclient.Transport = newwrappedroundtripper(httpclient.Transport, w)
 		client := githubv4.NewClient(httpclient)
 
@@ -166,7 +174,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		data.Query = new(githubquery)
 		if err := client.Query(ctx, data.Query, variables); err != nil {
-			fmt.Fprint(w, err)
+			fmt.Fprintf(w, "<pre>%s</pre>", html.EscapeString(err.Error()))
 			return
 		}
 		fmt.Fprint(w, `<script>document.body.innerHTML=""</script>`)
@@ -183,8 +191,8 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 type tmpldata struct {
-	Query *githubquery
-	Token string
+	Query         *githubquery
+	Authenticated bool
 }
 
 type githubquery struct {

@@ -33,7 +33,7 @@ eq
 
 {{ define "second" -}}
 <main class="container">
-    {{ if not .Token }}
+    {{ if not .Authenticated }}
     <form action="/oauth2_login" method="get">
         <div class="grid">
             <button>Login with Github</button>

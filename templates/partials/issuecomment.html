@@ -1,0 +1,6 @@
+{{ define "issuecomment" -}}
+<td title="{{ .UpdatedAt }}">{{ .UpdatedAt | ago }}</td>
+<td>{{ .Repository.NameWithOwner }}</td>
+<td><a href="{{ .URL }}" title="{{ .BodyText }}">{{ .Issue.Title }}</a></td>
+<td>{{ range .ReactionGroups }}{{ template "reactions" . }}{{ end }}</td>
+{{- end }}

@@ -1,0 +1,20 @@
+<table>
+    <tbody>
+        {{- range .User.IssueComments.Nodes -}}
+        <tr>
+            {{- template "issuecomment" . -}}
+        </tr>
+        {{- end -}}
+    </tbody>
+</table>
+
+{{- if .User.IssueComments.PageInfo.HasNextPage -}}
+<form hx-get="/query" hx-indicator="#next-indicator" hx-target="#results" hx-swap="innerHTML show:window:top">
+    <div class="grid">
+        <input type="submit" value="Next">
+        <input hidden name="login" value="{{ .User.Login }}">
+        <input hidden name="cursor" value="{{ .User.IssueComments.PageInfo.EndCursor }}">
+        <div id="next-indicator" class="htmx-indicator">next indicator</div>
+    </div>
+</form>
+{{- end -}}

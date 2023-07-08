@@ -1,0 +1,25 @@
+{{ define "reactions" -}}
+{{ if ne .Reactors.TotalCount 0 }}
+{{ if eq .Content "THUMBS_UP" }}
+👍
+{{ else if eq .Content "THUMBS_DOWN" }}
+👎
+{{ else if eq .Content "LAUGH" }}
+😄
+{{ else if
+eq
+.Content "HOORAY" }}
+🎉
+{{ else if eq .Content "CONFUSED" }}
+😕
+{{ else if eq .Content "HEART" }}
+❤️
+{{ else if eq .Content
+"ROCKET" }}
+🚀
+{{ else if eq .Content "EYES" }}
+👀
+{{ end }}
+{{ .Reactors.TotalCount }}
+{{ end }}
+{{- end }}

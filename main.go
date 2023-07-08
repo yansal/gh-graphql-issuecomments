@@ -5,12 +5,11 @@ import (
 	"embed"
 	"errors"
 	"fmt"
-	"html"
 	"html/template"
 	"io"
 	"log"
 	"net/http"
-	"net/http/httputil"
+	"os"
 	"time"
 
 	"github.com/ardanlabs/conf/v3"
@@ -29,8 +28,6 @@ func main() {
 var (
 	//go:embed static
 	staticfs embed.FS
-	//go:embed templates
-	tmplfs embed.FS
 )
 
 const cookiename = `github_access_token`
@@ -71,11 +68,9 @@ func main1() error {
 	mux.HandleFunc("/oauth2_login", o.login)
 	mux.HandleFunc("/oauth2_callback", o.callback)
 
-	h, err := newhandler()
-	if err != nil {
-		return err
-	}
-	mux.Handle("/", h)
+	var h handler
+	mux.HandleFunc("/query", h.query)
+	mux.HandleFunc("/", h.root)
 
 	return http.ListenAndServe(":"+cfg.Port, mux)
 }
@@ -108,9 +103,15 @@ func (o *oauth2handler) login(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, authURL, http.StatusTemporaryRedirect)
 }
 
-func newhandler() (http.Handler, error) {
-	tmpl, err := template.
-		New("template_name").
+func maketemplates() *templates {
+	index := template.Must(template.
+		New("index.html").
+		ParseFS(os.DirFS("."),
+			"templates/index.html",
+		),
+	)
+	query := template.Must(template.
+		New("query.html").
 		Funcs(template.FuncMap{
 			"ago": func(value githubv4.String) (string, error) {
 				t, err := time.Parse(time.RFC3339, string(value))
@@ -120,24 +121,32 @@ func newhandler() (http.Handler, error) {
 				return timeago.English.Format(t), nil
 			},
 		}).
-		ParseFS(tmplfs, "templates/*")
-	if err != nil {
-		return nil, err
+		ParseFS(os.DirFS("."),
+			"templates/query.html",
+			"templates/partials/*.html",
+		),
+	)
+
+	return &templates{
+		index: index,
+		query: query,
 	}
-	return &handler{
-		tmpl: tmpl,
-	}, nil
 }
 
-type handler struct {
-	tmpl *template.Template
-}
+type templates struct {
+	// full
+	index *template.Template
 
-func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// fragments
+	query *template.Template
+}
+type handler struct{}
+
+func (h *handler) root(w http.ResponseWriter, r *http.Request) {
 	var (
-		data       tmpldata
-		ctx        = r.Context()
-		httpclient *http.Client
+		authenticated bool
+		ctx           = r.Context()
+		httpclient    *http.Client
 	)
 	if cookie, err := r.Cookie(cookiename); err == nil {
 		// check if cookie is valid
@@ -148,51 +157,52 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Viewer struct{ Login githubv4.String }
 		}
 		if err := client.Query(ctx, &q, nil); err == nil {
-			data.Authenticated = true
+			authenticated = true
 		}
 	}
 
 	b := new(bytes.Buffer)
-	if err := h.tmpl.ExecuteTemplate(b, "first", nil); err != nil {
+	if err := maketemplates().index.Execute(b, authenticated); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if _, err := io.Copy(w, b); err != nil {
+	io.Copy(w, b)
+}
+
+func (h *handler) query(w http.ResponseWriter, r *http.Request) {
+	var (
+		ctx         = r.Context()
+		cookie, err = r.Cookie(cookiename)
+	)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
 	}
-
-	if query := r.URL.Query(); data.Authenticated && query.Has("login") {
-		httpclient.Transport = newwrappedroundtripper(httpclient.Transport, w)
-		client := githubv4.NewClient(httpclient)
-
-		variables := map[string]interface{}{
+	var (
+		src        = oauth2.StaticTokenSource(&oauth2.Token{AccessToken: cookie.Value})
+		httpclient = oauth2.NewClient(ctx, src)
+		client     = githubv4.NewClient(httpclient)
+		query      = r.URL.Query()
+		variables  = map[string]interface{}{
 			"cursor": (*githubv4.String)(nil),
 			"login":  githubv4.String(query.Get("login")),
 		}
-		if query.Has("cursor") {
-			variables["cursor"] = githubv4.String(query.Get("cursor"))
-		}
-		data.Query = new(githubquery)
-		if err := client.Query(ctx, data.Query, variables); err != nil {
-			fmt.Fprintf(w, "<pre>%s</pre>", html.EscapeString(err.Error()))
-			return
-		}
-		fmt.Fprint(w, `<script>document.body.innerHTML=""</script>`)
+	)
+	if query.Has("cursor") {
+		variables["cursor"] = githubv4.String(query.Get("cursor"))
 	}
-
-	b.Reset()
-	if err := h.tmpl.ExecuteTemplate(b, "second", data); err != nil {
-		fmt.Fprint(w, err)
+	q := new(githubquery)
+	if err := client.Query(ctx, q, variables); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if _, err := io.Copy(w, b); err != nil {
+
+	b := new(bytes.Buffer)
+	if err := maketemplates().query.Execute(b, q); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-}
-
-type tmpldata struct {
-	Query         *githubquery
-	Authenticated bool
+	io.Copy(w, b)
 }
 
 type githubquery struct {
@@ -223,64 +233,4 @@ type githubquery struct {
 			}
 		} `graphql:"issueComments(first: 100, after: $cursor, orderBy:{direction:DESC, field:UPDATED_AT})"`
 	} `graphql:"user(login: $login)"`
-}
-
-func newwrappedroundtripper(rt http.RoundTripper, w http.ResponseWriter) http.RoundTripper {
-	flusher := w.(http.Flusher)
-	done := make(chan struct{})
-	return &wrappedroundtripper{
-		before: func(req *http.Request) {
-			body := true
-			dump, err := httputil.DumpRequestOut(req, body)
-			if err != nil {
-				return
-			}
-			fmt.Fprintf(w, "<pre>%s</pre>", html.EscapeString(string(dump)))
-			flusher.Flush()
-			go func() {
-				ticker := time.NewTicker(100 * time.Millisecond)
-				defer ticker.Stop()
-				for range ticker.C {
-					select {
-					case <-done:
-						return
-					default:
-						fmt.Fprintf(w, "💩")
-						flusher.Flush()
-					}
-				}
-			}()
-		},
-		after: func(resp *http.Response, err error) {
-			close(done)
-			if err != nil {
-				return
-			}
-			body := true
-			dump, err := httputil.DumpResponse(resp, body)
-			if err != nil {
-				return
-			}
-			fmt.Fprintf(w, "<pre>%s</pre>", html.EscapeString(string(dump)))
-			flusher.Flush()
-		},
-		wrapped: rt,
-	}
-}
-
-type wrappedroundtripper struct {
-	before  func(*http.Request)
-	after   func(*http.Response, error)
-	wrapped http.RoundTripper
-}
-
-func (rt *wrappedroundtripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	if rt.before != nil {
-		rt.before(req)
-	}
-	resp, err := rt.wrapped.RoundTrip(req)
-	if rt.after != nil {
-		rt.after(resp, err)
-	}
-	return resp, err
 }

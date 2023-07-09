@@ -12,6 +12,11 @@
             word-break: break-all;
         }
     </style>
+    <script>
+        document.addEventListener('htmx:responseError', function (evt) {
+            document.getElementById('error').innerHTML = evt.detail.xhr.response
+        });
+    </script>
 </head>
 
 <body>
@@ -23,14 +28,18 @@
             </div>
         </form>
         {{ else }}
-        <form hx-get="/query" hx-indicator="#indicator" hx-target="#results">
+        <form hx-get="/query" hx-indicator="#indicator" hx-target="#tbody"
+            onsubmit='document.getElementById("tbody").innerHTML=""'>
             <div class="grid">
                 <input type="text" name="login" placeholder="github login" required>
                 <input type="submit" value="List comments">
-                <div id="indicator" class="htmx-indicator">indicator</div>
             </div>
         </form>
-        <div id="results"></div>
+        <table>
+            <tbody id="tbody"></tbody>
+        </table>
+        <div id="indicator" class="htmx-indicator">indicator</div>
+        <div id="error"></div>
         {{ end }}
     </main>
 </body>

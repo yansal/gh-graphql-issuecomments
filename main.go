@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ardanlabs/conf/v3"
+	"github.com/google/go-github/v53/github"
 	"github.com/shurcooL/githubv4"
 	"github.com/xeonx/timeago"
 	"golang.org/x/oauth2"
@@ -69,8 +70,9 @@ func main1() error {
 	mux.HandleFunc("/oauth2_callback", o.callback)
 
 	var h handler
-	mux.HandleFunc("/query", h.query)
 	mux.HandleFunc("/", h.root)
+	mux.HandleFunc("/search", h.search)
+	mux.HandleFunc("/query", h.query)
 
 	return http.ListenAndServe(":"+cfg.Port, mux)
 }
@@ -126,10 +128,17 @@ func maketemplates() *templates {
 			"templates/partials/*.html",
 		),
 	)
+	search := template.Must(template.
+		New("search.html").
+		ParseFS(os.DirFS("."),
+			"templates/search.html",
+		),
+	)
 
 	return &templates{
-		index: index,
-		query: query,
+		index:  index,
+		query:  query,
+		search: search,
 	}
 }
 
@@ -138,7 +147,8 @@ type templates struct {
 	index *template.Template
 
 	// fragments
-	query *template.Template
+	query  *template.Template
+	search *template.Template
 }
 type handler struct{}
 
@@ -169,6 +179,38 @@ func (h *handler) root(w http.ResponseWriter, r *http.Request) {
 	io.Copy(w, b)
 }
 
+func (h *handler) search(w http.ResponseWriter, r *http.Request) {
+	var (
+		ctx         = r.Context()
+		cookie, err = r.Cookie(cookiename)
+	)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+
+	login := r.FormValue("login")
+	if login == "" {
+		return
+	}
+
+	var (
+		src        = oauth2.StaticTokenSource(&oauth2.Token{AccessToken: cookie.Value})
+		httpclient = oauth2.NewClient(ctx, src)
+		client     = github.NewClient(httpclient)
+	)
+	res, _, err := client.Search.Users(ctx, login, &github.SearchOptions{})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	b := new(bytes.Buffer)
+	if err := maketemplates().search.Execute(b, res); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	io.Copy(w, b)
+}
 func (h *handler) query(w http.ResponseWriter, r *http.Request) {
 	var (
 		ctx         = r.Context()

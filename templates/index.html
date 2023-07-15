@@ -17,6 +17,15 @@
             document.getElementById('error').innerHTML = evt.detail.xhr.response
         });
     </script>
+
+    <script>
+        function searchresultclicked(event) {
+            console.log(event)
+            document.getElementById("input").value = event.target.innerHTML;
+            document.getElementById("active-search-result").innerHTML = '';
+            document.getElementById("form").requestSubmit();
+        }
+    </script>
 </head>
 
 <body>
@@ -28,13 +37,17 @@
             </div>
         </form>
         {{ else }}
-        <form hx-get="/query" hx-indicator="#indicator" hx-target="#tbody"
+        <form id="form" hx-get="/query" hx-indicator="#indicator" hx-target="#tbody"
             onsubmit='document.getElementById("tbody").innerHTML=""'>
             <div class="grid">
-                <input type="text" name="login" placeholder="github login" required>
+                <input id="input" type="search" name="login" placeholder="github login" required hx-post="/search"
+                    hx-trigger="keyup changed delay:500ms" hx-target="#active-search-result">
                 <input type="submit" value="List comments">
             </div>
         </form>
+        <table>
+            <tbody id="active-search-result"></tbody>
+        </table>
         <table>
             <tbody id="tbody"></tbody>
         </table>

@@ -12,6 +12,7 @@
             word-break: break-all;
         }
     </style>
+
     <script>
         document.addEventListener('htmx:responseError', function (evt) {
             document.getElementById('error').innerHTML = evt.detail.xhr.response
@@ -19,10 +20,13 @@
     </script>
 
     <script>
-        function searchresultclicked(event) {
-            console.log(event)
-            document.getElementById("input").value = event.target.innerHTML;
+        function formsubmitted(event) {
             document.getElementById("active-search-result").innerHTML = '';
+            document.getElementById("tbody").innerHTML = "";
+        }
+
+        function searchresultclicked(event) {
+            document.getElementById("input").value = event.target.innerHTML;
             document.getElementById("form").requestSubmit();
         }
     </script>
@@ -37,12 +41,12 @@
             </div>
         </form>
         {{ else }}
-        <form id="form" hx-get="/query" hx-indicator="#indicator" hx-target="#tbody"
-            onsubmit='document.getElementById("tbody").innerHTML=""'>
+        <form id="form" hx-get="/query" hx-indicator="#indicator" hx-target="#tbody" onsubmit="formsubmitted(event)">
             <div class="grid">
                 <input id="input" type="search" name="login" placeholder="github login" required hx-post="/search"
-                    hx-trigger="keyup changed delay:500ms" hx-target="#active-search-result">
-                <input type="submit" value="List comments">
+                    hx-trigger="keyup changed delay:100ms" hx-target="#active-search-result" hx-indicator="none"
+                    hx-sync="closest form:abort">
+                <button>List comments <img id="indicator" class="htmx-indicator" src="/static/img/bars.svg"></button>
             </div>
         </form>
         <table>
@@ -51,7 +55,6 @@
         <table>
             <tbody id="tbody"></tbody>
         </table>
-        <div id="indicator" class="htmx-indicator">indicator</div>
         <div id="error"></div>
         {{ end }}
     </main>

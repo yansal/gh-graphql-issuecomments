@@ -70,7 +70,7 @@ func main1() error {
 	mux.HandleFunc("/oauth2_callback", o.callback)
 
 	var h handler
-	mux.HandleFunc("/", h.root)
+	mux.HandleFunc("/", h.index)
 	mux.HandleFunc("/search", h.search)
 	mux.HandleFunc("/query", h.query)
 
@@ -152,7 +152,7 @@ type templates struct {
 }
 type handler struct{}
 
-func (h *handler) root(w http.ResponseWriter, r *http.Request) {
+func (h *handler) index(w http.ResponseWriter, r *http.Request) {
 	var (
 		authenticated bool
 		ctx           = r.Context()
@@ -211,6 +211,7 @@ func (h *handler) search(w http.ResponseWriter, r *http.Request) {
 	}
 	io.Copy(w, b)
 }
+
 func (h *handler) query(w http.ResponseWriter, r *http.Request) {
 	var (
 		ctx         = r.Context()

@@ -7,5 +7,9 @@
 {{- if .User.IssueComments.PageInfo.HasNextPage -}}
 <tr hx-get="/query" hx-trigger="revealed" hx-swap="outerHTML"
     hx-vals='{"login":"{{ .User.Login }}","cursor":"{{ .User.IssueComments.PageInfo.EndCursor }}"}'
-    hx-indicator="#indicator"></tr>
+    hx-indicator="#next-indicator">
+    <td>
+        <img id="next-indicator" class="htmx-indicator" src="/static/img/bars.svg">
+    </td>
+</tr>
 {{- end -}}

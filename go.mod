@@ -1,6 +1,6 @@
 module github.com/yansal/gh-graphql-issuecomments
 
-go 1.19
+go 1.23.2
 
 require (
 	github.com/ardanlabs/conf/v3 v3.1.6

@@ -9,6 +9,7 @@ import (
 	"html/template"
 	"io"
 	"log"
+	"log/slog"
 	"net/http"
 	"net/http/httputil"
 	"time"
@@ -75,10 +76,46 @@ func main1() error {
 	if err != nil {
 		return err
 	}
-	mux.Handle("/", h)
+	mux.Handle("/", logmw(h))
 
+	slog.Info("listening on :" + cfg.Port)
 	return http.ListenAndServe(":"+cfg.Port, mux)
 }
+
+func logmw(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		rw := &ResponseWriter{ResponseWriter: w}
+		defer func() {
+			slog.Info(r.Pattern,
+				"duration", time.Since(start),
+				"status", rw.statusCode,
+			)
+		}()
+		h.ServeHTTP(rw, r)
+	})
+}
+
+type ResponseWriter struct {
+	http.ResponseWriter
+	statusCode int
+	written    bool
+}
+
+func (rw *ResponseWriter) Write(p []byte) (int, error) {
+	if !rw.written {
+		rw.WriteHeader(http.StatusOK)
+	}
+	return rw.ResponseWriter.Write(p)
+}
+
+func (rw *ResponseWriter) WriteHeader(statusCode int) {
+	rw.statusCode = statusCode
+	rw.written = true
+	rw.ResponseWriter.WriteHeader(statusCode)
+}
+
+func (rw *ResponseWriter) Flush() { rw.ResponseWriter.(http.Flusher).Flush() }
 
 type oauth2handler struct {
 	cfg   *oauth2.Config

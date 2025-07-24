@@ -134,8 +134,9 @@ func (o *oauth2handler) callback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.SetCookie(w, &http.Cookie{
-		Name:  cookiename,
-		Value: token.AccessToken,
+		Name:    cookiename,
+		Value:   token.AccessToken,
+		Expires: time.Now().AddDate(1, 0, 0), // 1 year
 	})
 	http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 }
